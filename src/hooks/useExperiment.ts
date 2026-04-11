@@ -364,9 +364,8 @@ export function useExperiment(): UseExperimentReturn {
         uploadDeviceData(rowsDevice).then(incrementProgress),
       ]);
 
-      // Upload chunks in batches of 5 to avoid browser limits
       console.log('[Upload] Starting chunk upload in batches...');
-      const BATCH_SIZE = 5;
+      const BATCH_SIZE = 8;
       for (let i = 0; i < chunkUploads.length; i += BATCH_SIZE) {
         const batch = chunkUploads.slice(i, i + BATCH_SIZE);
         console.log(`[Upload] Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunkUploads.length / BATCH_SIZE)}`);
