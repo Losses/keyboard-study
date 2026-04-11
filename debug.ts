@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto";
 import { GOOGLE_APPS_SCRIPT_URL } from "./src/constants/index.ts";
+import { stringify } from "./src/utils/serializers.ts";
 
 const CALLBACK = "__cb__";
 
@@ -77,14 +78,16 @@ async function directWrite(sheet: string, rows: unknown) {
   return await callGas({
     action: "write",
     sheet,
-    rows: JSON.stringify(rows),
+    rows: stringify(rows),
   });
 }
 
 // ---------- Finalize Upload ----------
 
 async function finalizeUpload(sessionId: string) {
-  console.log(`\n[Finalize] Triggering server-side merge for session: ${sessionId}`);
+  console.log(
+    `\n[Finalize] Triggering server-side merge for session: ${sessionId}`,
+  );
   const result = await callGas({
     action: "finalize",
     sessionId,
@@ -95,8 +98,12 @@ async function finalizeUpload(sessionId: string) {
 
 // ---------- Chunked Write (Parallel) ----------
 
-async function chunkWriteParallel(sheet: string, rows: unknown, chunkSize = 300) {
-  const fullStr = JSON.stringify(rows);
+async function chunkWriteParallel(
+  sheet: string,
+  rows: unknown,
+  chunkSize = 300,
+) {
+  const fullStr = stringify(rows);
   const chunks = splitString(fullStr, chunkSize);
   const sessionId = `bun_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const dataHash = md5Base64Url(fullStr);
@@ -143,7 +150,9 @@ async function main() {
   ];
 
   // 2) device test data
-  const deviceRows = [[participantId, 344.5, 194.2, 18.0, 12.0, "TEST USER AGENT"]];
+  const deviceRows = [
+    [participantId, 344.5, 194.2, 18.0, 12.0, "TEST USER AGENT"],
+  ];
 
   // 3) keypresses test data
   const keypressRows = Array.from({ length: 24 }, (_, i) => {
@@ -172,7 +181,9 @@ async function main() {
   console.log("==================================================");
 
   // Parallel upload: trials, device, and keypresses chunks simultaneously
-  console.log("\n[Step 1] Starting parallel upload of trials, device, and keypresses chunks...");
+  console.log(
+    "\n[Step 1] Starting parallel upload of trials, device, and keypresses chunks...",
+  );
 
   const [r1, r2, keypressResult] = await Promise.all([
     directWrite("trials", trialsRows).then((r) => {
@@ -201,7 +212,9 @@ async function main() {
 
   console.log("\n==================================================");
   console.log("All requests completed successfully!");
-  console.log("Please open the Spreadsheet to verify that all three sheets were written successfully.");
+  console.log(
+    "Please open the Spreadsheet to verify that all three sheets were written successfully.",
+  );
   console.log("==================================================");
   console.log(`participantId = ${participantId}`);
   console.log(`trialId       = ${trialId}`);
