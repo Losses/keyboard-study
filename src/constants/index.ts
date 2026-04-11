@@ -49,10 +49,20 @@ export const CONTENT_TYPES: ContentType[] = ['Number', 'Letter', 'Color'];
 export const LAYOUT_TYPES: LayoutType[] = ['Standard', 'Reverse', 'Random'];
 
 /**
- * Total number of trials in a complete experiment session.
- * Each content type × each layout type × 2 repetitions + 2 random trials = 20 trials.
+ * Trial configurations for the remainder (extra random trials).
+ * Only uses Number content with Standard/Reverse layouts for control conditions.
  */
-export const TOTAL_TRIALS = 20;
+export const REMAINDER_POOL: { content: 'Number'; layout: 'Standard' | 'Reverse' }[] = [
+  { content: 'Number', layout: 'Standard' },
+  { content: 'Number', layout: 'Reverse' },
+];
+
+/**
+ * Total number of trials in a complete experiment session.
+ * Formula: (CONTENT_TYPES × LAYOUT_TYPES) × repetitions + remainder = TOTAL_TRIALS
+ * Example: (3 × 3) × 2 + 2 = 20 trials
+ */
+export const TOTAL_TRIALS = 25;
 
 /**
  * Length of the target sequence for each trial.

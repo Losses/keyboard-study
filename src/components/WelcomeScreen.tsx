@@ -3,7 +3,7 @@
  * Displays the introduction and instructions for the experiment.
  */
 
-import { THEME_COLORS } from '../constants';
+import { THEME_COLORS, TOTAL_TRIALS } from '../constants';
 
 interface WelcomeScreenProps {
   /** Callback when user starts the experiment */
@@ -34,7 +34,7 @@ export function WelcomeScreen({ onStart }: WelcomeScreenProps) {
         >
           <p>This is the Keyboard Layout Study.</p>
           <p>
-            You will complete 20 sequential tasks. In each task, a target sequence of 5
+            You will complete {TOTAL_TRIALS} sequential tasks. In each task, a target sequence of 5
             items is provided.
           </p>
           <p>

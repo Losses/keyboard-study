@@ -3,12 +3,29 @@
  */
 
 import type { Trial, TrialConfig, ContentType, LayoutType } from '../types';
-import { DICTIONARIES, CONTENT_TYPES, LAYOUT_TYPES, TARGET_SEQUENCE_LENGTH, REVERSE_LAYOUT_INDICES } from '../constants';
+import { DICTIONARIES, CONTENT_TYPES, LAYOUT_TYPES, TARGET_SEQUENCE_LENGTH, REVERSE_LAYOUT_INDICES, TOTAL_TRIALS, REMAINDER_POOL } from '../constants';
+
+/**
+ * Picks a specified number of random trial configurations from a pool.
+ *
+ * @param count - Number of trials to pick
+ * @param pool - Array of trial configurations to choose from
+ * @returns Array of randomly selected trial configurations
+ */
+function pickRandomFromPool<T>(count: number, pool: T[]): T[] {
+  const result: T[] = [];
+  for (let i = 0; i < count; i++) {
+    result.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  return result;
+}
 
 /**
  * Generates a complete set of trials for the experiment.
- * Creates combinations of all content types and layouts, duplicates them,
- * and adds two random trials for a total of 20 trials.
+ * Creates combinations of all content types and layouts, repeats them,
+ * and adds random trials to reach TOTAL_TRIALS.
+ *
+ * Formula: baseCombinations × repetitions + remainder = TOTAL_TRIALS
  *
  * @returns An array of randomized trial configurations
  */
@@ -21,10 +38,18 @@ export function generateTrials(): Trial[] {
     }
   }
 
-  // Duplicate all combinations and add 2 random trials
-  let pool = [...combinations, ...combinations];
-  pool.push(combinations[Math.floor(Math.random() * combinations.length)]);
-  pool.push(combinations[Math.floor(Math.random() * combinations.length)]);
+  const baseCount = combinations.length;
+  const repetitions = Math.floor(TOTAL_TRIALS / baseCount);
+  const remainder = TOTAL_TRIALS % baseCount;
+
+  // Build pool: repeat combinations N times, add remainder random trials
+  let pool: TrialConfig[] = [];
+  for (let i = 0; i < repetitions; i++) {
+    pool = [...pool, ...combinations];
+  }
+  // Add random trials from the remainder pool (Number × Standard/Reverse only)
+  const remainderTrials = pickRandomFromPool(remainder, REMAINDER_POOL);
+  pool.push(...remainderTrials);
 
   // Shuffle the pool
   pool = shuffleArray(pool);
