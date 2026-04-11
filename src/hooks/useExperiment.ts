@@ -22,6 +22,7 @@ import {
   getHashBase64Url,
 } from '../utils/api';
 import { UPLOAD_CHUNK_SIZE } from '../constants';
+import { nanoid } from 'nanoid';
 
 interface UseExperimentReturn {
   /** Current application stage */
@@ -65,7 +66,8 @@ interface UseExperimentReturn {
  */
 export function useExperiment(): UseExperimentReturn {
   // Participant identifier (persistent across session)
-  const [participantId] = useState(() => crypto.randomUUID());
+  // Using 10-character nanoid instead of UUID for data compression
+  const [participantId] = useState(() => nanoid(10));
 
   // Application state
   const [stage, setStage] = useState<'setup' | 'running' | 'done'>('setup');
@@ -335,28 +337,26 @@ export function useExperiment(): UseExperimentReturn {
         setUploadProgress((completed / totalReqs) * 100);
       };
 
-      // Upload trials data
-      await uploadTrialsData(rowsTrials, 'trials');
-      incrementProgress();
-
-      // Upload device data
-      await uploadDeviceData(rowsDevice);
-      incrementProgress();
-
-      // Upload keypress data in chunks
+      // Prepare session data for keypress chunks
       const sessionId = `web_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const dataHash = await getHashBase64Url(strKeypresses);
       const encoder = new TextEncoder();
 
-      for (let i = 0; i < chunks.length; i++) {
-        const chunkBytes = encoder.encode(chunks[i]);
+      // Prepare all chunk uploads
+      const chunkUploads = chunks.map((chunk, i) => {
+        const chunkBytes = encoder.encode(chunk);
         const chunkData = btoa(
           Array.from(chunkBytes, (x) => String.fromCharCode(x)).join('')
         );
+        return uploadKeypressChunk(chunkData, sessionId, chunks.length, i, dataHash);
+      });
 
-        await uploadKeypressChunk(chunkData, sessionId, chunks.length, i, dataHash);
-        incrementProgress();
-      }
+      // Parallel upload: trials, device, and all keypress chunks simultaneously
+      await Promise.all([
+        uploadTrialsData(rowsTrials, 'trials').then(incrementProgress),
+        uploadDeviceData(rowsDevice).then(incrementProgress),
+        ...chunkUploads.map((p) => p.then(incrementProgress)),
+      ]);
 
       setUploadStatus('success');
     } catch (error) {

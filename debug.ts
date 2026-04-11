@@ -5,7 +5,7 @@ const APP_ID = "AKfycbwJCxfeaEzixLFiMU33eFooZRq4yoqTx6eFPkKggsq1Yt6q7FceOoF-MMhS
 const BASE_URL = `https://script.google.com/macros/s/${APP_ID}/exec`;
 const CALLBACK = "__cb__";
 
-// ---------- 工具函数 ----------
+// ---------- Utility Functions ----------
 
 function md5Base64Url(str: string) {
   return createHash("md5")
@@ -31,11 +31,11 @@ function parseJsonp(text: string) {
 
   if (!s.startsWith(prefix) || !s.endsWith(suffix)) {
     throw new Error(
-      "返回内容不是预期的 JSONP。很可能是：\n" +
-        "1) Web App 没有正确部署\n" +
-        "2) 访问权限不是 Anyone\n" +
-        "3) URL 不是 /exec\n\n" +
-        "原始响应前 500 字符：\n" +
+      "Response is not the expected JSONP format. Possible causes:\n" +
+        "1) Web App is not properly deployed\n" +
+        "2) Access permission is not set to 'Anyone'\n" +
+        "3) URL does not end with /exec\n\n" +
+        "First 500 characters of raw response:\n" +
         s.slice(0, 500),
     );
   }
@@ -72,7 +72,7 @@ async function callGas(params: Record<string, unknown>) {
   return parseJsonp(text);
 }
 
-// ---------- 直接写入 ----------
+// ---------- Direct Write ----------
 
 async function directWrite(sheet: string, rows: unknown) {
   return await callGas({
@@ -82,7 +82,7 @@ async function directWrite(sheet: string, rows: unknown) {
   });
 }
 
-// ---------- 分片写入 ----------
+// ---------- Chunked Write ----------
 
 async function chunkWrite(sheet: string, rows: unknown, chunkSize = 300) {
   const fullStr = JSON.stringify(rows);
@@ -115,22 +115,22 @@ async function chunkWrite(sheet: string, rows: unknown, chunkSize = 300) {
   return lastResult;
 }
 
-// ---------- 主流程 ----------
+// ---------- Main Process ----------
 
 async function main() {
   const participantId = `P_${Date.now()}`;
   const trialId = `T_${Date.now()}`;
 
-  // 1) trials 测试数据
+  // 1) trials test data
   const trialsRows = [
     [participantId, trialId, "article", "L1-R2", "A>B>C>D", 1534, 2],
     [participantId, `${trialId}_2`, "video", "R1-L2", "D>C>B>A", 1820, 0],
   ];
 
-  // 2) device 测试数据
+  // 2) device test data
   const deviceRows = [[participantId, 344.5, 194.2, 18.0, 12.0, "TEST USER AGENT"]];
 
-  // 3) keypresses 测试数据
+  // 3) keypresses test data
   const keypressRows = Array.from({ length: 24 }, (_, i) => {
     const expected = ["A", "S", "D", "F"][i % 4];
     const isBackspace = i % 7 === 6;
@@ -153,31 +153,31 @@ async function main() {
   });
 
   console.log("==================================================");
-  console.log("1) 测试 trials 直接写入");
+  console.log("1) Test trials direct write");
   console.log("==================================================");
   const r1 = await directWrite("trials", trialsRows);
   console.log("Result:", r1);
 
   console.log("\n==================================================");
-  console.log("2) 测试 device 直接写入");
+  console.log("2) Test device direct write");
   console.log("==================================================");
   const r2 = await directWrite("device", deviceRows);
   console.log("Result:", r2);
 
   console.log("\n==================================================");
-  console.log("3) 测试 keypresses 分片写入");
+  console.log("3) Test keypresses chunked write");
   console.log("==================================================");
   const r3 = await chunkWrite("keypresses", keypressRows, 200);
   console.log("Final Result:", r3);
 
-  console.log("\n全部请求已发送完成。");
-  console.log("请打开 Spreadsheet 检查三张 sheet 是否写入成功。");
+  console.log("\nAll requests have been sent.");
+  console.log("Please open the Spreadsheet to verify that all three sheets were written successfully.");
   console.log(`participantId = ${participantId}`);
   console.log(`trialId       = ${trialId}`);
 }
 
 main().catch((err) => {
-  console.error("\n测试失败：");
+  console.error("\nTest failed:");
   console.error(err);
   process.exit(1);
 });
