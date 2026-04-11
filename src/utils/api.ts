@@ -48,6 +48,22 @@ export async function getHashBase64Url(str: string): Promise<string> {
 }
 
 /**
+ * Callback ID generator for JSONP requests.
+ * Uses base-36 encoding for compact representation.
+ * For a single session with ≤50 requests, provides 46,656 unique combinations.
+ */
+let callbackCounter = 0;
+
+function generateCallbackId(): string {
+  // Use base-36 (0-9, a-z) for shorter representation
+  // For 50 requests: 0, 1, 2, ..., '1d' (49 in base-36)
+  // Length: 4-5 characters instead of 18-21
+  const id = callbackCounter.toString(36);
+  callbackCounter++;
+  return `cb_${id}`;
+}
+
+/**
  * Performs a JSONP (JSON with Padding) request to the Google Apps Script endpoint.
  * JSONP is used to bypass CORS restrictions when communicating with Google Apps Script.
  *
@@ -57,8 +73,8 @@ export async function getHashBase64Url(str: string): Promise<string> {
  */
 export function jsonpFetch(params: JsonpParams): Promise<JsonpResponse> {
   return new Promise<JsonpResponse>((resolve, reject) => {
-    // Generate a unique callback name
-    const cbName = `cb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    // Generate a unique callback name (optimized for short length)
+    const cbName = generateCallbackId();
 
     // Define the callback function globally
     // Using type assertion to bypass window's strict typing for dynamic callback registration
