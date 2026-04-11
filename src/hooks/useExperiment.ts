@@ -348,15 +348,6 @@ export function useExperiment(): UseExperimentReturn {
       console.log('[Upload] Data hash:', dataHash);
       console.log('[Upload] Keypress data size:', strKeypresses.length, 'chars');
 
-      // Prepare all chunk uploads
-      const chunkUploads = chunks.map((chunk, i) => {
-        const chunkBytes = encoder.encode(chunk);
-        const chunkData = btoa(
-          Array.from(chunkBytes, (x) => String.fromCharCode(x)).join('')
-        );
-        return uploadKeypressChunk(chunkData, sessionId, chunks.length, i, dataHash);
-      });
-
       // Upload trials and device first, then upload chunks in batches
       console.log('[Upload] Starting trials and device upload...');
       await Promise.all([
@@ -364,12 +355,27 @@ export function useExperiment(): UseExperimentReturn {
         uploadDeviceData(rowsDevice).then(incrementProgress),
       ]);
 
+      // Upload chunks in batches to avoid overwhelming the network
       console.log('[Upload] Starting chunk upload in batches...');
       const BATCH_SIZE = 8;
-      for (let i = 0; i < chunkUploads.length; i += BATCH_SIZE) {
-        const batch = chunkUploads.slice(i, i + BATCH_SIZE);
-        console.log(`[Upload] Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunkUploads.length / BATCH_SIZE)}`);
-        await Promise.all(batch.map((p) => p.then(incrementProgress)));
+      for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+        const batchChunks = chunks.slice(i, i + BATCH_SIZE);
+        const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(chunks.length / BATCH_SIZE);
+        console.log(`[Upload] Uploading batch ${batchNumber}/${totalBatches}`);
+
+        // Create upload promises for this batch only
+        const batchPromises = batchChunks.map((chunk, batchIndex) => {
+          const chunkIndex = i + batchIndex;
+          const chunkBytes = encoder.encode(chunk);
+          const chunkData = btoa(
+            Array.from(chunkBytes, (x) => String.fromCharCode(x)).join('')
+          );
+          return uploadKeypressChunk(chunkData, sessionId, chunks.length, chunkIndex, dataHash)
+            .then(incrementProgress);
+        });
+
+        await Promise.all(batchPromises);
       }
 
       // All chunks uploaded successfully, now trigger finalization
