@@ -19,6 +19,7 @@ import {
   uploadTrialsData,
   uploadDeviceData,
   uploadKeypressChunk,
+  finalizeUpload,
   getHashBase64Url,
 } from '../utils/api';
 import { UPLOAD_CHUNK_SIZE } from '../constants';
@@ -357,6 +358,9 @@ export function useExperiment(): UseExperimentReturn {
         uploadDeviceData(rowsDevice).then(incrementProgress),
         ...chunkUploads.map((p) => p.then(incrementProgress)),
       ]);
+
+      // All chunks uploaded successfully, now trigger finalization
+      await finalizeUpload(sessionId);
 
       setUploadStatus('success');
     } catch (error) {

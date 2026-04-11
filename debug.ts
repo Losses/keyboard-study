@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto";
+import { GOOGLE_APPS_SCRIPT_URL } from "./src/constants/index.ts";
 
-const APP_ID = "AKfycbwJCxfeaEzixLFiMU33eFooZRq4yoqTx6eFPkKggsq1Yt6q7FceOoF-MMhS-3SUT42Taw";
-const BASE_URL = `https://script.google.com/macros/s/${APP_ID}/exec`;
 const CALLBACK = "__cb__";
 
 // ---------- Utility Functions ----------
@@ -45,7 +44,7 @@ function parseJsonp(text: string) {
 }
 
 async function callGas(params: Record<string, unknown>) {
-  const url = new URL(BASE_URL);
+  const url = new URL(GOOGLE_APPS_SCRIPT_URL);
 
   url.searchParams.set("callback", CALLBACK);
   for (const [k, v] of Object.entries(params)) {
@@ -82,9 +81,21 @@ async function directWrite(sheet: string, rows: unknown) {
   });
 }
 
-// ---------- Chunked Write ----------
+// ---------- Finalize Upload ----------
 
-async function chunkWrite(sheet: string, rows: unknown, chunkSize = 300) {
+async function finalizeUpload(sessionId: string) {
+  console.log(`\n[Finalize] Triggering server-side merge for session: ${sessionId}`);
+  const result = await callGas({
+    action: "finalize",
+    sessionId,
+  });
+  console.log("[Finalize] Result:", result);
+  return result;
+}
+
+// ---------- Chunked Write (Parallel) ----------
+
+async function chunkWriteParallel(sheet: string, rows: unknown, chunkSize = 300) {
   const fullStr = JSON.stringify(rows);
   const chunks = splitString(fullStr, chunkSize);
   const sessionId = `bun_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -94,12 +105,10 @@ async function chunkWrite(sheet: string, rows: unknown, chunkSize = 300) {
   console.log(`totalChunks = ${chunks.length}`);
   console.log(`dataHash    = ${dataHash}`);
 
-  let lastResult = null;
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunkData = Buffer.from(chunks[i], "utf8").toString("base64");
-
-    lastResult = await callGas({
+  // Upload all chunks in parallel (simulating Web App behavior)
+  const chunkPromises = chunks.map((chunk, i) => {
+    const chunkData = Buffer.from(chunk, "utf8").toString("base64");
+    return callGas({
       action: "chunk",
       sheet,
       sessionId,
@@ -107,12 +116,18 @@ async function chunkWrite(sheet: string, rows: unknown, chunkSize = 300) {
       chunkIndex: i,
       chunkData,
       dataHash,
-    });
+    }).then((result) => ({ index: i, result }));
+  });
 
-    console.log(`[Chunk ${i + 1}/${chunks.length}]`, lastResult);
-  }
+  // Wait for all chunks to complete
+  const results = await Promise.all(chunkPromises);
 
-  return lastResult;
+  // Log results
+  results.forEach(({ index, result }) => {
+    console.log(`[Chunk ${index + 1}/${chunks.length}]`, result);
+  });
+
+  return { sessionId, results };
 }
 
 // ---------- Main Process ----------
@@ -153,27 +168,44 @@ async function main() {
   });
 
   console.log("==================================================");
-  console.log("1) Test trials direct write");
+  console.log("Parallel Upload Test (Simulating Web App Behavior)");
   console.log("==================================================");
-  const r1 = await directWrite("trials", trialsRows);
-  console.log("Result:", r1);
+
+  // Parallel upload: trials, device, and keypresses chunks simultaneously
+  console.log("\n[Step 1] Starting parallel upload of trials, device, and keypresses chunks...");
+
+  const [r1, r2, keypressResult] = await Promise.all([
+    directWrite("trials", trialsRows).then((r) => {
+      console.log("[Trials] Upload complete:", r);
+      return r;
+    }),
+    directWrite("device", deviceRows).then((r) => {
+      console.log("[Device] Upload complete:", r);
+      return r;
+    }),
+    chunkWriteParallel("keypresses", keypressRows, 200).then((r) => {
+      console.log("[Keypresses] All chunks uploaded");
+      return r;
+    }),
+  ]);
+
+  console.log("\n[Step 2] All uploads completed successfully");
+  console.log("  - Trials:", r1);
+  console.log("  - Device:", r2);
+  console.log("  - Keypresses chunks:", keypressResult.results.length);
+
+  // Finalize: Trigger server-side merge immediately after all uploads complete
+  console.log("\n[Step 3] Triggering Finalize to merge keypress chunks...");
+  const finalizeResult = await finalizeUpload(keypressResult.sessionId);
+  console.log("  - Finalize result:", finalizeResult);
 
   console.log("\n==================================================");
-  console.log("2) Test device direct write");
-  console.log("==================================================");
-  const r2 = await directWrite("device", deviceRows);
-  console.log("Result:", r2);
-
-  console.log("\n==================================================");
-  console.log("3) Test keypresses chunked write");
-  console.log("==================================================");
-  const r3 = await chunkWrite("keypresses", keypressRows, 200);
-  console.log("Final Result:", r3);
-
-  console.log("\nAll requests have been sent.");
+  console.log("All requests completed successfully!");
   console.log("Please open the Spreadsheet to verify that all three sheets were written successfully.");
+  console.log("==================================================");
   console.log(`participantId = ${participantId}`);
   console.log(`trialId       = ${trialId}`);
+  console.log(`sessionId     = ${keypressResult.sessionId}`);
 }
 
 main().catch((err) => {

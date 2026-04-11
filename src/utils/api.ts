@@ -143,3 +143,18 @@ export function uploadKeypressChunk(
     dataHash,
   });
 }
+
+/**
+ * Finalizes a chunked upload session.
+ * This triggers the server to merge all uploaded chunks into the keypresses sheet.
+ * Should be called immediately after all chunks have been successfully uploaded.
+ *
+ * @param sessionId - Unique session identifier for the upload session
+ * @returns A promise that resolves when finalization is complete
+ */
+export function finalizeUpload(sessionId: string): Promise<JsonpResponse> {
+  return jsonpFetch({
+    action: 'finalize',
+    sessionId,
+  });
+}
