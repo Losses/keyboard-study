@@ -3,16 +3,26 @@
  * Orchestrates the keyboard layout study experiment.
  */
 
+import { useEffect } from 'react';
 import { useExperiment } from './hooks/useExperiment';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ExperimentScreen } from './components/ExperimentScreen';
 import { CompletionScreen } from './components/CompletionScreen';
+import { registerDebugState } from './utils/debug-tools';
 
 /**
  * Renders the appropriate screen based on the current experiment stage.
  */
 export function App() {
   const experiment = useExperiment();
+
+  // Register experiment state for debug tools
+  useEffect(() => {
+    registerDebugState({
+      startExperiment: experiment.startExperiment,
+      handleUpload: experiment.handleUpload,
+    });
+  }, [experiment]);
 
   switch (experiment.stage) {
     case 'setup':

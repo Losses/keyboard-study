@@ -3,7 +3,7 @@
  * Handles trial generation, user input, timing, and data collection.
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type {
   Trial,
   TrialResult,
@@ -343,6 +343,11 @@ export function useExperiment(): UseExperimentReturn {
       const dataHash = await getHashBase64Url(strKeypresses);
       const encoder = new TextEncoder();
 
+      console.log('[Upload] Session ID:', sessionId);
+      console.log('[Upload] Total chunks:', chunks.length);
+      console.log('[Upload] Data hash:', dataHash);
+      console.log('[Upload] Keypress data size:', strKeypresses.length, 'chars');
+
       // Prepare all chunk uploads
       const chunkUploads = chunks.map((chunk, i) => {
         const chunkBytes = encoder.encode(chunk);
@@ -352,19 +357,37 @@ export function useExperiment(): UseExperimentReturn {
         return uploadKeypressChunk(chunkData, sessionId, chunks.length, i, dataHash);
       });
 
-      // Parallel upload: trials, device, and all keypress chunks simultaneously
+      // Upload trials and device first, then upload chunks in batches
+      console.log('[Upload] Starting trials and device upload...');
       await Promise.all([
         uploadTrialsData(rowsTrials, 'trials').then(incrementProgress),
         uploadDeviceData(rowsDevice).then(incrementProgress),
-        ...chunkUploads.map((p) => p.then(incrementProgress)),
       ]);
 
+      // Upload chunks in batches of 5 to avoid browser limits
+      console.log('[Upload] Starting chunk upload in batches...');
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < chunkUploads.length; i += BATCH_SIZE) {
+        const batch = chunkUploads.slice(i, i + BATCH_SIZE);
+        console.log(`[Upload] Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunkUploads.length / BATCH_SIZE)}`);
+        await Promise.all(batch.map((p) => p.then(incrementProgress)));
+      }
+
       // All chunks uploaded successfully, now trigger finalization
-      await finalizeUpload(sessionId);
+      console.log('[Upload] All chunks uploaded, triggering finalize...');
+      const finalizeResult = await finalizeUpload(sessionId);
+      console.log('[Upload] Finalize result:', finalizeResult);
 
       setUploadStatus('success');
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('[Upload] Error during upload:', error);
+      console.error('[Upload] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        resultsCount: results.length,
+        detailedLogsCount: detailedLogs.length,
+        participantId,
+      });
       setUploadStatus('error');
     }
   }, [
@@ -391,6 +414,83 @@ export function useExperiment(): UseExperimentReturn {
   }, []);
 
   const currentTrial = trials[currentTrialIndex] || null;
+
+  /**
+   * Auto-run feature for debugging.
+   * Monitors global window.__autoRun__ flag and:
+   * - Starts experiment if in setup stage
+   * - Auto-completes trials with simulated input
+   */
+  useEffect(() => {
+    const win = window as unknown as { __autoRun__?: boolean };
+
+    if (!win.__autoRun__) return;
+
+    // Start experiment if in setup stage
+    if (stage === 'setup') {
+      console.log('[Auto-Run] 🚀 Starting experiment...');
+      startExperiment();
+      return; // Let the next effect handle auto-completion
+    }
+
+    // Auto-complete trials if running
+    if (stage === 'running' && currentTrial) {
+      console.log('[Auto-Run] ⚡ Auto-completing trial', currentTrialIndex + 1);
+
+      const targetKeys = currentTrial.target;
+      let currentIndex = currentInput.length;
+      let timeoutIds: NodeJS.Timeout[] = [];
+
+      const pressNextKey = () => {
+        if (currentIndex >= targetKeys.length) {
+          console.log('[Auto-Run] ✅ Trial', currentTrialIndex + 1, 'completed');
+          // Don't reset flag here - let it continue to next trial
+          return;
+        }
+
+        const targetKey = targetKeys[currentIndex];
+        // Find the key in layoutKeys
+        const keyIndex = currentTrial.layoutKeys.indexOf(targetKey);
+
+        if (keyIndex === -1) {
+          console.error('[Auto-Run] ❌ Key not found in layout:', targetKey);
+          win.__autoRun__ = false;
+          return;
+        }
+
+        // Simulate key press
+        const mockEvent = {
+          nativeEvent: { pointerType: 'mouse' },
+        } as React.PointerEvent;
+
+        handleKeyPress(mockEvent, targetKey, keyIndex);
+        currentIndex++;
+
+        // Schedule next key press with random delay (100-300ms)
+        const delay = Math.random() * 200 + 100;
+        const timeoutId = setTimeout(pressNextKey, delay);
+        timeoutIds.push(timeoutId);
+      };
+
+      // Start pressing keys
+      if (currentIndex < targetKeys.length) {
+        const initialDelay = Math.random() * 200 + 100;
+        const timeoutId = setTimeout(pressNextKey, initialDelay);
+        timeoutIds.push(timeoutId);
+      }
+
+      return () => {
+        // Cleanup: clear all pending timeouts
+        timeoutIds.forEach((id) => clearTimeout(id));
+      };
+    }
+
+    // Stop auto-run when experiment is done
+    if (stage === 'done') {
+      console.log('[Auto-Run] 🎉 All trials completed! Click Upload to finish.');
+      win.__autoRun__ = false;
+    }
+  }, [stage, currentTrial, currentTrialIndex, currentInput, handleKeyPress, startExperiment]);
 
   return {
     stage,

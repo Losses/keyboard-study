@@ -22,17 +22,24 @@ export interface JsonpResponse {
 }
 
 /**
- * Generates a base64 URL-safe SHA-256 hash of a string.
+ * Generates a base64 URL-safe MD5 hash of a string.
  * Used for data integrity verification during upload.
+ * Note: Using MD5 to match the Google Apps Script implementation.
  *
  * @param str - The string to hash
  * @returns A promise that resolves to the base64 URL-safe hash
  */
 export async function getHashBase64Url(str: string): Promise<string> {
-  const buffer = new TextEncoder().encode(str);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  // Convert string to UTF-8 bytes
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+
+  // Compute MD5 hash using SubtleCrypto
+  const hashBuffer = await crypto.subtle.digest('MD5', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashBase64 = btoa(hashArray.map((x) => String.fromCharCode(x)).join(''));
+  const hashBase64 = btoa(String.fromCharCode.apply(null, hashArray));
+
+  // Convert to URL-safe base64
   return hashBase64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
@@ -57,6 +64,17 @@ export function jsonpFetch(params: JsonpParams): Promise<JsonpResponse> {
       if (script.parentNode) {
         document.head.removeChild(script);
       }
+
+      // Log response for debugging
+      console.log('[JSONP Response]', data);
+
+      // Check for error in response
+      if (data && typeof data === 'object' && 'error' in data) {
+        console.error('[JSONP Error]', data.error);
+        reject(new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error)));
+        return;
+      }
+
       resolve(data);
     };
 
@@ -70,7 +88,10 @@ export function jsonpFetch(params: JsonpParams): Promise<JsonpResponse> {
       searchParams.set(key, String(value));
     }
 
-    script.src = `${GOOGLE_APPS_SCRIPT_URL}?${searchParams.toString()}`;
+    const url = `${GOOGLE_APPS_SCRIPT_URL}?${searchParams.toString()}`;
+    console.log('[JSONP Request]', params.action, params);
+
+    script.src = url;
 
     // Handle errors
     script.onerror = () => {
@@ -78,7 +99,10 @@ export function jsonpFetch(params: JsonpParams): Promise<JsonpResponse> {
       if (script.parentNode) {
         document.head.removeChild(script);
       }
-      reject(new Error('Network Request Error'));
+      console.error('[JSONP Network Error] Failed to load script:', url);
+      console.error('[JSONP Network Error] URL length:', url.length);
+      console.error('[JSONP Network Error] Parameters:', params);
+      reject(new Error(`Network Request Error: Failed to load ${url}`));
     };
 
     // Execute the request
@@ -118,30 +142,51 @@ export function uploadDeviceData(rows: unknown[][]): Promise<JsonpResponse> {
 /**
  * Uploads a chunk of keypress data to Google Sheets via JSONP.
  * Large datasets are split into chunks to avoid URL length limits.
+ * Includes retry logic for network failures.
  *
  * @param chunkData - Base64 encoded chunk data
  * @param sessionId - Unique session identifier for chunk reconstruction
  * @param totalChunks - Total number of chunks in this upload
  * @param chunkIndex - Index of this chunk (0-based)
  * @param dataHash - Hash of the complete dataset for verification
+ * @param retries - Number of retry attempts (default: 3)
  * @returns A promise that resolves when chunk upload is complete
  */
-export function uploadKeypressChunk(
+export async function uploadKeypressChunk(
   chunkData: string,
   sessionId: string,
   totalChunks: number,
   chunkIndex: number,
-  dataHash: string
+  dataHash: string,
+  retries = 3
 ): Promise<JsonpResponse> {
-  return jsonpFetch({
-    action: 'chunk',
-    sheet: 'keypresses',
-    sessionId,
-    totalChunks,
-    chunkIndex,
-    chunkData,
-    dataHash,
-  });
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await jsonpFetch({
+        action: 'chunk',
+        sheet: 'keypresses',
+        sessionId,
+        totalChunks,
+        chunkIndex,
+        chunkData,
+        dataHash,
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.warn(`[Chunk ${chunkIndex}] Upload attempt ${attempt + 1}/${retries} failed:`, lastError.message);
+
+      if (attempt < retries - 1) {
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`[Chunk ${chunkIndex}] Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError || new Error(`Failed to upload chunk ${chunkIndex} after ${retries} attempts`);
 }
 
 /**

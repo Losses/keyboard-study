@@ -61,8 +61,9 @@ export const TARGET_SEQUENCE_LENGTH = 5;
 
 /**
  * Chunk size for splitting large keypress data during upload.
+ * Increased to reduce number of parallel requests and avoid browser limits.
  */
-export const UPLOAD_CHUNK_SIZE = 200;
+export const UPLOAD_CHUNK_SIZE = 1000;
 
 /**
  * CSS color constants for the application theme.
