@@ -37,51 +37,18 @@ export function VirtualKeyboard({
       {layoutKeys.map((keyText, idx) => {
         const isZeroPosition = idx === 9;
         const isColorMode = contentType === 'Color';
-        const keyColor = isColorMode ? keyText : undefined;
 
         return (
           <button
             key={idx}
             ref={idx === 0 ? buttonRef : null}
             onPointerDown={(e) => onKeyPress(e, keyText, idx)}
-            className={`h-16 rounded text-lg font-mono transition-opacity shadow-sm ${
+            className={`h-16 bg-[#ebf4f6] border border-[#c4e0e8] rounded text-lg font-mono transition-opacity shadow-sm ${
               isZeroPosition ? 'col-start-2' : ''
+            } ${
+              isColorMode ? 'hover:opacity-80 active:opacity-60' : 'hover:bg-[#d4e9ee] active:bg-[#b0d4de]'
             }`}
-            style={{
-              backgroundColor: isColorMode ? keyColor : THEME_COLORS.background,
-              borderColor: isColorMode && keyText === '#FFFFFF' ? THEME_COLORS.border : keyColor,
-              borderWidth: '1px',
-              borderStyle: 'solid',
-              opacity: isColorMode ? 1 : undefined,
-            }}
-            onMouseEnter={(e) => {
-              if (isColorMode) {
-                e.currentTarget.style.opacity = '0.8';
-              } else {
-                e.currentTarget.style.backgroundColor = THEME_COLORS.primaryHover;
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (isColorMode) {
-                e.currentTarget.style.opacity = '1';
-              } else {
-                e.currentTarget.style.backgroundColor = THEME_COLORS.background;
-              }
-            }}
-            onPointerDownCapture={(e) => {
-              if (isColorMode) {
-                e.currentTarget.style.opacity = '0.6';
-              } else {
-                e.currentTarget.style.backgroundColor = THEME_COLORS.primaryActive;
-              }
-            }}
-            onPointerUp={(e) => {
-              if (isColorMode) {
-                e.currentTarget.style.opacity = '0.8';
-              } else {
-                e.currentTarget.style.backgroundColor = THEME_COLORS.primaryHover;
-              }
-            }}
+            style={isColorMode ? { backgroundColor: keyText, borderColor: keyText === '#FFFFFF' ? '#c4e0e8' : keyText } : {}}
           >
             {isColorMode ? '' : keyText}
           </button>

@@ -98,18 +98,11 @@ interface TargetSlotProps {
 
 function TargetSlot({ value, contentType }: TargetSlotProps) {
   const isColorMode = contentType === 'Color';
-  const backgroundColor = isColorMode ? value : undefined;
-  const borderColor = isColorMode && value === '#FFFFFF' ? THEME_COLORS.border : value;
 
   return (
     <div
-      className="px-4 py-2 rounded font-mono text-lg min-w-[3rem] min-h-[3rem] flex items-center justify-center text-center shadow-sm border"
-      style={{
-        backgroundColor: isColorMode ? backgroundColor : THEME_COLORS.cardBackground,
-        borderColor,
-        borderWidth: '1px',
-        borderStyle: 'solid',
-      }}
+      className="bg-[#deedf1] border border-[#c4e0e8] px-4 py-2 rounded font-mono text-lg min-w-[3rem] min-h-[3rem] flex items-center justify-center text-center shadow-sm"
+      style={isColorMode ? { backgroundColor: value, borderColor: value === '#FFFFFF' ? '#c4e0e8' : value } : {}}
     >
       {isColorMode ? '' : value}
     </div>
@@ -127,24 +120,21 @@ interface InputSlotProps {
 
 function InputSlot({ value, contentType, isError }: InputSlotProps) {
   const isColorMode = contentType === 'Color';
-  const backgroundColor = isColorMode ? value : isError ? THEME_COLORS.errorBackground : THEME_COLORS.background;
-  const borderColor = isColorMode
-    ? value === '#FFFFFF'
-      ? THEME_COLORS.border
-      : value
-    : isError
-      ? THEME_COLORS.errorBorder
-      : THEME_COLORS.primary;
 
   return (
     <div
-      className={`px-4 py-2 rounded font-mono text-lg min-w-[3rem] min-h-[3rem] flex items-center justify-center text-center border shadow-sm`}
-      style={{
-        backgroundColor,
-        borderColor,
-        borderWidth: isError ? '4px' : '1px',
-        borderStyle: 'solid',
-      }}
+      className={`px-4 py-2 rounded font-mono text-lg min-w-[3rem] min-h-[3rem] flex items-center justify-center text-center border shadow-sm ${
+        isError ? 'border-[#d4a39b] bg-[#f5e3e0]' : 'border-[#a0c5d1] bg-[#ebf4f6]'
+      }`}
+      style={
+        isColorMode
+          ? {
+              backgroundColor: value,
+              borderColor: isError ? '#d4a39b' : value === '#FFFFFF' ? '#a0c5d1' : value,
+              borderWidth: isError ? '4px' : '1px',
+            }
+          : {}
+      }
     >
       {isColorMode ? '' : value}
     </div>
