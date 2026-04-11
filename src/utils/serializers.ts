@@ -3,7 +3,7 @@
  * Converts domain objects to API-compatible formats.
  */
 
-import type { TrialResult, EnvironmentData, DetailedLog } from '../types';
+import type { TrialResult, EnvironmentData, DetailedLog } from "../types";
 
 /**
  * Serializes a single trial result to API row format.
@@ -15,7 +15,7 @@ function serializeTrialResultRow(result: TrialResult): unknown[] {
     result.trialId,
     result.content,
     result.layout,
-    result.target.join('-'),
+    result.target.join("-"),
     result.timeMs,
     result.backspaceCount,
   ];
@@ -40,7 +40,7 @@ export function serializeTrialResults(results: TrialResult[]): unknown[][] {
  */
 export function serializeEnvironmentData(
   envData: EnvironmentData,
-  participantId: string
+  participantId: string,
 ): unknown[][] {
   return [
     [
@@ -49,7 +49,7 @@ export function serializeEnvironmentData(
       (envData.windowHeightMm || 0).toFixed(2),
       (envData.buttonWidthMm || 0).toFixed(2),
       (envData.buttonHeightMm || 0).toFixed(2),
-      `"${envData.userAgent || ''}"`,
+      `"${envData.userAgent || ""}"`,
     ],
   ];
 }
@@ -83,6 +83,75 @@ export function serializeDetailedLogs(logs: DetailedLog[]): unknown[][] {
   return logs.map(serializeDetailedLogRow);
 }
 
+export class SearchableMap {
+  private index = 0;
+
+  private value = new Map<string, number>();
+
+  push = (x: string) => {
+    this.value.set(x, this.index);
+
+    this.index = this.index + 1;
+  };
+
+  get length() {
+    return this.index;
+  }
+
+  indexOf = (x: string) => {
+    const result = this.value.get(x);
+
+    if (result === undefined) {
+      return -1;
+    }
+
+    return result;
+  };
+
+  dump = () => {
+    return [...this.value.keys()];
+  };
+}
+
+export const stringify = (x: unknown) => {
+  const head = new SearchableMap();
+
+  const getIndex = (x: string) => {
+    const index = head.indexOf(x);
+
+    if (index >= 0) {
+      return index;
+    }
+
+    head.push(x);
+    return head.length - 1;
+  };
+
+  const sBody = JSON.stringify(x, (_, value) => {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (value !== null && typeof value === "object") {
+      const result: Record<string, unknown> = {};
+
+      const keys = Object.keys(value);
+      for (let i = 0; i < keys.length; i += 1) {
+        const key = keys[i];
+        result[getIndex(key)] = value[key];
+      }
+
+      return result;
+    }
+
+    return getIndex(value);
+  });
+
+  const sHead = JSON.stringify(head.dump());
+
+  return `${sBody}\n${sHead}`;
+};
+
 /**
  * Converts serialized rows to JSON string.
  * Used for chunking large datasets.
@@ -91,7 +160,7 @@ export function serializeDetailedLogs(logs: DetailedLog[]): unknown[][] {
  * @returns JSON string representation
  */
 export function rowsToJsonString(rows: unknown[][]): string {
-  return JSON.stringify(rows);
+  return stringify(rows);
 }
 
 /**
@@ -118,5 +187,5 @@ export function chunkString(str: string, chunkSize: number): string[] {
 export function encodeChunkToBase64(chunk: string): string {
   const encoder = new TextEncoder();
   const chunkBytes = encoder.encode(chunk);
-  return btoa(Array.from(chunkBytes, (x) => String.fromCharCode(x)).join(''));
+  return btoa(Array.from(chunkBytes, (x) => String.fromCharCode(x)).join(""));
 }

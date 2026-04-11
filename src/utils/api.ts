@@ -9,6 +9,7 @@ import {
   serializeTrialResults,
   serializeEnvironmentData,
   serializeDetailedLogs,
+  rowsToJsonString,
 } from './serializers';
 
 /**
@@ -22,7 +23,7 @@ export function uploadTrials(results: TrialResult[]): Promise<JsonpResponse> {
   return jsonpFetch({
     action: 'write',
     sheet: 'trials',
-    rows: JSON.stringify(rows),
+    rows: rowsToJsonString(rows),
   });
 }
 
@@ -41,7 +42,7 @@ export function uploadDevice(
   return jsonpFetch({
     action: 'write',
     sheet: 'device',
-    rows: JSON.stringify(rows),
+    rows: rowsToJsonString(rows),
   });
 }
 
