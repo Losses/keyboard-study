@@ -1,8 +1,22 @@
-html {
-  color-scheme: light dark;
-  font-family: system-ui;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+@import "tailwindcss";
+
+/* Reset default styles and ensure full height */
+html,
+body {
+  margin: 0;
+  padding: 0;
   height: 100%;
+  width: 100%;
+}
+
+/* Use light mode to prevent dark background */
+html {
+  color-scheme: light;
+}
+
+/* Remove default flex layout from html - let components handle layout */
+body {
+  font-family: system-ui;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
