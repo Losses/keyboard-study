@@ -4,6 +4,7 @@
  */
 
 import { GOOGLE_APPS_SCRIPT_URL } from '../constants';
+import md5 from 'md5';
 
 /**
  * Parameters for JSONP requests.
@@ -30,14 +31,17 @@ export interface JsonpResponse {
  * @returns A promise that resolves to the base64 URL-safe hash
  */
 export async function getHashBase64Url(str: string): Promise<string> {
-  // Convert string to UTF-8 bytes
-  const encoder = new TextEncoder();
-  const data = encoder.encode(str);
+  // Compute MD5 hash (returns hex string)
+  const hashHex = md5(str);
 
-  // Compute MD5 hash using SubtleCrypto
-  const hashBuffer = await crypto.subtle.digest('MD5', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashBase64 = btoa(String.fromCharCode.apply(null, hashArray));
+  // Convert hex to bytes
+  const hashBytes = new Uint8Array(hashHex.length / 2);
+  for (let i = 0; i < hashHex.length; i += 2) {
+    hashBytes[i / 2] = parseInt(hashHex.substr(i, 2), 16);
+  }
+
+  // Convert bytes to base64
+  const hashBase64 = btoa(String.fromCharCode.apply(null, Array.from(hashBytes)));
 
   // Convert to URL-safe base64
   return hashBase64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
