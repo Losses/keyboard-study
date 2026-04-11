@@ -62,7 +62,7 @@ export const REMAINDER_POOL: { content: 'Number'; layout: 'Standard' | 'Reverse'
  * Formula: (CONTENT_TYPES × LAYOUT_TYPES) × repetitions + remainder = TOTAL_TRIALS
  * Example: (3 × 3) × 2 + 2 = 20 trials
  */
-export const TOTAL_TRIALS = 25;
+export const TOTAL_TRIALS = 30;
 
 /**
  * Length of the target sequence for each trial.
