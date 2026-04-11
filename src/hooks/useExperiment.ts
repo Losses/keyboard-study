@@ -15,14 +15,7 @@ import type {
 import { generateTrials } from '../utils/trials';
 import { pxToMm, getSlotPosition } from '../utils/measurement';
 import { exportAllData } from '../utils/export';
-import {
-  uploadTrialsData,
-  uploadDeviceData,
-  uploadKeypressChunk,
-  finalizeUpload,
-  getHashBase64Url,
-} from '../utils/api';
-import { UPLOAD_CHUNK_SIZE } from '../constants';
+import { uploadExperimentData } from '../utils/upload';
 import { nanoid } from 'nanoid';
 
 interface UseExperimentReturn {
@@ -280,6 +273,7 @@ export function useExperiment(): UseExperimentReturn {
 
   /**
    * Handles data upload to Google Sheets.
+   * Delegates to upload service and manages upload state.
    */
   const handleUpload = useCallback(async () => {
     if (uploadStatus === 'uploading') return;
@@ -288,101 +282,9 @@ export function useExperiment(): UseExperimentReturn {
     setUploadProgress(0);
 
     try {
-      // Prepare data arrays
-      const rowsTrials = results.map((r) => [
-        r.participantId,
-        r.trialId,
-        r.content,
-        r.layout,
-        r.target.join('-'),
-        r.timeMs,
-        r.backspaceCount,
-      ]);
-
-      const rowsDevice = [
-        [
-          participantId,
-          (envData.windowWidthMm || 0).toFixed(2),
-          (envData.windowHeightMm || 0).toFixed(2),
-          (envData.buttonWidthMm || 0).toFixed(2),
-          (envData.buttonHeightMm || 0).toFixed(2),
-          `"${envData.userAgent || ''}"`,
-        ],
-      ];
-
-      const rowsKeypresses = detailedLogs.map((l) => [
-        l.participantId,
-        l.trialId,
-        Math.round(l.timestamp),
-        Math.round(l.intervalMs),
-        l.action,
-        l.inputMethod,
-        l.slotId,
-        l.pressedKey,
-        l.expectedKey,
-        l.status,
-      ]);
-
-      // Calculate total requests
-      const strKeypresses = JSON.stringify(rowsKeypresses);
-      const chunks: string[] = [];
-      for (let i = 0; i < strKeypresses.length; i += UPLOAD_CHUNK_SIZE) {
-        chunks.push(strKeypresses.slice(i, i + UPLOAD_CHUNK_SIZE));
-      }
-
-      const totalReqs = 2 + chunks.length;
-      let completed = 0;
-
-      const incrementProgress = () => {
-        completed++;
-        setUploadProgress((completed / totalReqs) * 100);
-      };
-
-      // Prepare session data for keypress chunks
-      const sessionId = `web_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const dataHash = await getHashBase64Url(strKeypresses);
-      const encoder = new TextEncoder();
-
-      console.log('[Upload] Session ID:', sessionId);
-      console.log('[Upload] Total chunks:', chunks.length);
-      console.log('[Upload] Data hash:', dataHash);
-      console.log('[Upload] Keypress data size:', strKeypresses.length, 'chars');
-
-      // Upload trials and device first, then upload chunks in batches
-      console.log('[Upload] Starting trials and device upload...');
-      await Promise.all([
-        uploadTrialsData(rowsTrials, 'trials').then(incrementProgress),
-        uploadDeviceData(rowsDevice).then(incrementProgress),
-      ]);
-
-      // Upload chunks in batches to avoid overwhelming the network
-      console.log('[Upload] Starting chunk upload in batches...');
-      const BATCH_SIZE = 8;
-      for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-        const batchChunks = chunks.slice(i, i + BATCH_SIZE);
-        const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-        const totalBatches = Math.ceil(chunks.length / BATCH_SIZE);
-        console.log(`[Upload] Uploading batch ${batchNumber}/${totalBatches}`);
-
-        // Create upload promises for this batch only
-        const batchPromises = batchChunks.map((chunk, batchIndex) => {
-          const chunkIndex = i + batchIndex;
-          const chunkBytes = encoder.encode(chunk);
-          const chunkData = btoa(
-            Array.from(chunkBytes, (x) => String.fromCharCode(x)).join('')
-          );
-          return uploadKeypressChunk(chunkData, sessionId, chunks.length, chunkIndex, dataHash)
-            .then(incrementProgress);
-        });
-
-        await Promise.all(batchPromises);
-      }
-
-      // All chunks uploaded successfully, now trigger finalization
-      console.log('[Upload] All chunks uploaded, triggering finalize...');
-      const finalizeResult = await finalizeUpload(sessionId);
-      console.log('[Upload] Finalize result:', finalizeResult);
-
+      await uploadExperimentData(results, envData, detailedLogs, participantId, {
+        onProgress: (progress) => setUploadProgress(progress),
+      });
       setUploadStatus('success');
     } catch (error) {
       console.error('[Upload] Error during upload:', error);
@@ -395,14 +297,7 @@ export function useExperiment(): UseExperimentReturn {
       });
       setUploadStatus('error');
     }
-  }, [
-    uploadStatus,
-    results,
-    envData,
-    detailedLogs,
-    participantId,
-    UPLOAD_CHUNK_SIZE,
-  ]);
+  }, [uploadStatus, results, envData, detailedLogs, participantId]);
 
   /**
    * Handles data export to CSV files.

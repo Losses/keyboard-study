@@ -8,7 +8,7 @@ import type { Dictionaries, ContentType, LayoutType } from '../types';
  * Google Apps Script configuration for data upload.
  * This ID points to the deployed web app that handles data submission.
  */
-export const GOOGLE_APPS_SCRIPT_ID = 'AKfycby1xQnjWimnehjj9b9jydCJgvteqgI6QOxgScG7uQA9yipVudvlLKieBcXb-0jyim84Sw';
+export const GOOGLE_APPS_SCRIPT_ID = 'AKfycbxWjbozoV_ot80CC6FaLF30R-vvL0u6-ohRxs7jFoA0--2d-NBSuMOSezrrj2bV32qk';
 
 /**
  * Base URL for the Google Apps Script execution endpoint.
