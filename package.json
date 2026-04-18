@@ -11,6 +11,7 @@
     "@types/md5": "^2.3.6",
     "md5": "^2.3.0",
     "nanoid": "^5.1.7",
+    "parcel-reporter-static-files-copy": "^1.5.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
