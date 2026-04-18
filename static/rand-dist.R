@@ -55,19 +55,3 @@ random_dist <- function(
 
   pmax(pmin(xs, xmax), xmin)
 }
-
-# ====================== 使用示例 ======================
-# 脸滚键盘随便敲一串（越乱越好）
-my_smash <- "coconut"
-
-d <- random_dist(
-  my_smash, 
-  xmin = 0, xmax = 100, 
-  ymin = -50, ymax = 50, 
-  N = 20000
-)
-
-library(ggplot2)
-
-ggplot(data.frame(x = d), aes(x = x)) + geom_density()
-
