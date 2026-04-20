@@ -1,4 +1,4 @@
-random_dist_1d <- function(
+random_dist <- function(
     smash,
     xmin = 0, xmax = 10,
     N = 10000
