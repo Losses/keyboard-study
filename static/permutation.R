@@ -633,16 +633,16 @@ scheme_report <- data.frame(
   stringsAsFactors = FALSE
 )
 
-print("--- Observed Statistics")
+print("* Observed Statistics")
 print(obs_metrics)
 
-print("--- Permutation Scheme Map")
+print("* Permutation Scheme Map")
 print(scheme_report)
 
-print("--- Permutation P-values")
+print("* Permutation P-values")
 print(p_values)
 
-print("--- Overall R2 P-values (joint permutation)")
+print("* Overall R2 P-values (joint permutation)")
 print(
   c(
     R2_marginal = global_p_marginal,
