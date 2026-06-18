@@ -19,6 +19,11 @@ df <- read.csv("./lv2.csv")
 df$Input_Method <- factor(df$Input_Method)
 df$Slot_ID <- factor(df$Slot_ID)
 
+df <- df %>%
+  dplyr::mutate(
+    Unique_Trial_ID = factor(paste0(Participant_ID, "_", Trial_ID))
+  )
+
 contrasts(df$Input_Method) <- contr.helmert(levels(df$Input_Method))
 contrasts(df$Slot_ID) <- contr.sum(levels(df$Slot_ID))
 
@@ -45,7 +50,7 @@ scaling_info <- list(
   Interval_ms = list(center = iv_z$center, scale = iv_z$scale)
 )
 
-model_formula <- Interval_ms_z ~ Input_Method * Slot_ID + Window_Width_mm_z + Chars_On_Screen_z + (1 | Participant_ID / Trial_ID)
+model_formula <- Interval_ms_z ~ Input_Method * Slot_ID + Window_Width_mm_z + Chars_On_Screen_z + (1 | Participant_ID / Unique_Trial_ID)
 
 base_model <- lme4::lmer(
   model_formula,
