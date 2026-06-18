@@ -45,10 +45,15 @@ scaling_info <- list(
   Interval_ms = list(center = iv_z$center, scale = iv_z$scale)
 )
 
+model_formula <- Interval_ms_z ~ Input_Method * Slot_ID + Window_Width_mm_z + Chars_On_Screen_z + (1 | Participant_ID / Trial_ID)
+
 base_model <- lme4::lmer(
-  Interval_ms_z ~ Input_Method * Slot_ID + Window_Width_mm_z + Chars_On_Screen_z + (1 | Participant_ID / Trial_ID),
+  model_formula,
   data = df,
-  control = lme4::lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e5))
+  control = lme4::lmerControl(
+    optimizer = "bobyqa",
+    optCtrl = list(maxfun = 1e5)
+  )
 )
 
 extract_metrics_raw <- function(fit) {
@@ -94,90 +99,287 @@ extract_metrics_safe <- function(fit, template_names = metric_names) {
 }
 
 # ==========================================
-# 2. PARALLEL JOINT PERMUTATION COMPUTATION
+# 2. PERMUTATION HELPERS
+# ==========================================
+
+make_permuted_data <- function(
+    base_df,
+    participant_input_mapping,
+    scheme = c("joint", "input_only", "slot_only"),
+    input_levels,
+    slot_levels,
+    input_contrasts,
+    slot_contrasts
+) {
+  scheme <- match.arg(scheme)
+  
+  perm_df <- base_df
+  
+  if (scheme %in% c("joint", "input_only")) {
+    shuffled_mapping <- participant_input_mapping
+    shuffled_mapping$Input_Method <- sample(shuffled_mapping$Input_Method)
+    
+    perm_df <- perm_df %>%
+      dplyr::select(-Input_Method) %>%
+      dplyr::left_join(shuffled_mapping, by = "Participant_ID")
+  }
+  
+  perm_df <- perm_df %>%
+    dplyr::mutate(
+      Input_Method = factor(Input_Method, levels = input_levels),
+      Slot_ID = factor(Slot_ID, levels = slot_levels)
+    )
+  
+  if (scheme %in% c("joint", "slot_only")) {
+    perm_df <- perm_df %>%
+      dplyr::group_by(Participant_ID) %>%
+      dplyr::mutate(
+        Slot_ID = factor(sample(as.character(Slot_ID)), levels = slot_levels)
+      ) %>%
+      dplyr::ungroup()
+  }
+  
+  contrasts(perm_df$Input_Method) <- input_contrasts
+  contrasts(perm_df$Slot_ID) <- slot_contrasts
+  
+  perm_df
+}
+
+run_permutation_scheme <- function(
+    scheme = c("joint", "input_only", "slot_only"),
+    n_workers = 5,
+    B_per_worker = 200,
+    base_df,
+    participant_input_mapping,
+    metric_names,
+    model_formula,
+    input_levels,
+    slot_levels,
+    input_contrasts,
+    slot_contrasts
+) {
+  scheme <- match.arg(scheme)
+  
+  cl <- parallel::makeCluster(n_workers)
+  on.exit(parallel::stopCluster(cl), add = TRUE)
+  doParallel::registerDoParallel(cl)
+  
+  seed_offset <- switch(
+    scheme,
+    joint = 101L,
+    input_only = 202L,
+    slot_only = 303L
+  )
+  parallel::clusterSetRNGStream(cl, 20260618 + seed_offset)
+  
+  perm_results_list <- foreach(
+    w = seq_len(n_workers),
+    .packages = c("lme4", "lmerTest", "effectsize", "performance", "dplyr"),
+    .export = c(
+      "make_permuted_data",
+      "extract_metrics_safe",
+      "extract_metrics_raw"
+    )
+  ) %dopar% {
+    worker_reps <- matrix(
+      NA_real_,
+      nrow = B_per_worker,
+      ncol = length(metric_names),
+      dimnames = list(NULL, metric_names)
+    )
+    
+    for (b in seq_len(B_per_worker)) {
+      perm_df <- make_permuted_data(
+        base_df = base_df,
+        participant_input_mapping = participant_input_mapping,
+        scheme = scheme,
+        input_levels = input_levels,
+        slot_levels = slot_levels,
+        input_contrasts = input_contrasts,
+        slot_contrasts = slot_contrasts
+      )
+      
+      perm_model <- tryCatch(
+        lme4::lmer(
+          model_formula,
+          data = perm_df,
+          control = lme4::lmerControl(
+            optimizer = "bobyqa",
+            optCtrl = list(maxfun = 1e5)
+          )
+        ),
+        error = function(e) NULL
+      )
+      
+      if (!is.null(perm_model)) {
+        worker_reps[b, ] <- extract_metrics_safe(perm_model, metric_names)
+      }
+    }
+    
+    as.data.frame(worker_reps)
+  }
+  
+  do.call(dplyr::bind_rows, perm_results_list)
+}
+
+# ==========================================
+# 3. RUN THREE PERMUTATION SCHEMES
 # ==========================================
 
 n_workers <- 5
-B_per_worker <- 80
+B_per_worker <- 200
 
 participant_input_mapping <- df %>%
   dplyr::select(Participant_ID, Input_Method) %>%
   dplyr::distinct()
 
-cl <- parallel::makeCluster(n_workers)
-on.exit(parallel::stopCluster(cl), add = TRUE)
-doParallel::registerDoParallel(cl)
+input_levels <- levels(df$Input_Method)
+slot_levels <- levels(df$Slot_ID)
+input_contrasts <- contrasts(df$Input_Method)
+slot_contrasts <- contrasts(df$Slot_ID)
 
-parallel::clusterSetRNGStream(cl, 20260618)
+joint_replicates_df <- run_permutation_scheme(
+  scheme = "joint",
+  n_workers = n_workers,
+  B_per_worker = B_per_worker,
+  base_df = df,
+  participant_input_mapping = participant_input_mapping,
+  metric_names = metric_names,
+  model_formula = model_formula,
+  input_levels = input_levels,
+  slot_levels = slot_levels,
+  input_contrasts = input_contrasts,
+  slot_contrasts = slot_contrasts
+)
 
-perm_results_list <- foreach(
-  w = 1:n_workers,
-  .packages = c("lme4", "lmerTest", "effectsize", "performance", "dplyr"),
-  .export = c(
-    "df",
-    "metric_names",
-    "extract_metrics_safe",
-    "B_per_worker",
-    "participant_input_mapping"
-  )
-) %dopar% {
-  worker_reps <- matrix(
-    NA_real_,
-    nrow = B_per_worker,
-    ncol = length(metric_names),
-    dimnames = list(NULL, metric_names)
-  )
-  
-  input_levels <- levels(df$Input_Method)
-  slot_levels <- levels(df$Slot_ID)
-  
-  for (b in 1:B_per_worker) {
-    shuffled_mapping <- participant_input_mapping
-    shuffled_mapping$Input_Method <- sample(shuffled_mapping$Input_Method)
-    
-    perm_df <- df %>%
-      dplyr::select(-Input_Method) %>%
-      dplyr::left_join(shuffled_mapping, by = "Participant_ID") %>%
-      dplyr::mutate(
-        Input_Method = factor(Input_Method, levels = input_levels),
-        Slot_ID = factor(Slot_ID, levels = slot_levels)
-      ) %>%
-      dplyr::group_by(Participant_ID) %>%
-      dplyr::mutate(Slot_ID = factor(sample(as.character(Slot_ID)), levels = slot_levels)) %>%
-      dplyr::ungroup()
-    
-    perm_model <- tryCatch(
-      lme4::lmer(
-        Interval_ms_z ~ Input_Method * Slot_ID + Window_Width_mm_z + Chars_On_Screen_z + (1 | Participant_ID / Trial_ID),
-        data = perm_df,
-        control = lme4::lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 1e5))
-      ),
-      error = function(e) NULL
-    )
-    
-    if (!is.null(perm_model)) {
-      worker_reps[b, ] <- extract_metrics_safe(perm_model)
-    }
-  }
-  
-  as.data.frame(worker_reps)
-}
+input_replicates_df <- run_permutation_scheme(
+  scheme = "input_only",
+  n_workers = n_workers,
+  B_per_worker = B_per_worker,
+  base_df = df,
+  participant_input_mapping = participant_input_mapping,
+  metric_names = metric_names,
+  model_formula = model_formula,
+  input_levels = input_levels,
+  slot_levels = slot_levels,
+  input_contrasts = input_contrasts,
+  slot_contrasts = slot_contrasts
+)
 
-replicates_df <- dplyr::bind_rows(perm_results_list)
-replicates_df <- replicates_df %>%
+slot_replicates_df <- run_permutation_scheme(
+  scheme = "slot_only",
+  n_workers = n_workers,
+  B_per_worker = B_per_worker,
+  base_df = df,
+  participant_input_mapping = participant_input_mapping,
+  metric_names = metric_names,
+  model_formula = model_formula,
+  input_levels = input_levels,
+  slot_levels = slot_levels,
+  input_contrasts = input_contrasts,
+  slot_contrasts = slot_contrasts
+)
+
+joint_replicates_df <- joint_replicates_df %>%
+  dplyr::select(dplyr::all_of(metric_names))
+
+input_replicates_df <- input_replicates_df %>%
+  dplyr::select(dplyr::all_of(metric_names))
+
+slot_replicates_df <- slot_replicates_df %>%
   dplyr::select(dplyr::all_of(metric_names))
 
 # ==========================================
-# 3. DATA REFACTORING & POST-PROCESSING
+# 4. PLOTTING SOURCE SELECTION
 # ==========================================
 
-long_replicates <- tidyr::pivot_longer(
-  replicates_df,
-  cols = dplyr::everything(),
-  names_to = "Parameter",
-  values_to = "Estimate"
+choose_scheme_for_parameter <- function(parameter) {
+  if (grepl("^R2_", parameter)) {
+    return("joint")
+  }
+  
+  if (grepl("^eta2_", parameter)) {
+    term <- sub("^eta2_", "", parameter)
+    
+    if (grepl("Input_Method", term) && !grepl(":", term)) {
+      return("input_only")
+    }
+    
+    if (grepl("Slot_ID", term) && !grepl(":", term)) {
+      return("slot_only")
+    }
+    
+    if (grepl(":", term)) {
+      return("joint")
+    }
+    
+    return("joint")
+  }
+  
+  if (grepl("Input_Method", parameter) && !grepl(":", parameter)) {
+    return("input_only")
+  }
+  
+  if (grepl("Slot_ID", parameter) && !grepl(":", parameter)) {
+    return("slot_only")
+  }
+  
+  if (grepl(":", parameter)) {
+    return("joint")
+  }
+  
+  return("joint")
+}
+
+build_long_replicates <- function(repl_df, scheme_name) {
+  tidyr::pivot_longer(
+    repl_df,
+    cols = dplyr::everything(),
+    names_to = "Parameter",
+    values_to = "Estimate"
+  ) %>%
+    dplyr::filter(!is.na(Estimate)) %>%
+    dplyr::mutate(
+      Scheme = scheme_name,
+      Variable_Group = stringr::str_replace_all(Parameter, "\\d+(?=:|$)", ""),
+      Metric_Type = dplyr::case_when(
+        stringr::str_detect(Parameter, "^R2") ~ "R2",
+        stringr::str_detect(Parameter, "^eta2") ~ "eta2",
+        TRUE ~ "beta"
+      )
+    )
+}
+
+scheme_map <- data.frame(
+  Parameter = names(obs_metrics),
+  Scheme = vapply(names(obs_metrics), choose_scheme_for_parameter, character(1)),
+  stringsAsFactors = FALSE
+)
+
+plot_long_list <- list()
+
+for (i in seq_len(nrow(scheme_map))) {
+  p_name <- scheme_map$Parameter[i]
+  sch <- scheme_map$Scheme[i]
+  
+  source_df <- switch(
+    sch,
+    joint = build_long_replicates(joint_replicates_df, "joint"),
+    input_only = build_long_replicates(input_replicates_df, "input_only"),
+    slot_only = build_long_replicates(slot_replicates_df, "slot_only")
+  )
+  
+  plot_long_list[[i]] <- source_df %>%
+    dplyr::filter(Parameter == p_name)
+}
+
+long_replicates <- dplyr::bind_rows(plot_long_list)
+
+obs_df <- data.frame(
+  Parameter = names(obs_metrics),
+  Observed = as.numeric(obs_metrics),
+  stringsAsFactors = FALSE
 ) %>%
-  dplyr::filter(!is.na(Estimate)) %>%
   dplyr::mutate(
     Variable_Group = stringr::str_replace_all(Parameter, "\\d+(?=:|$)", ""),
     Metric_Type = dplyr::case_when(
@@ -207,28 +409,21 @@ r2_obs_vals <- as.numeric(
 beta_plot_min <- min(c(raw_beta_min, -0.45, beta_obs_vals), na.rm = TRUE)
 beta_plot_max <- max(c(raw_beta_max, 0.45, beta_obs_vals), na.rm = TRUE)
 
-eta2_plot_max <- max(c(if (nrow(eta2_data) > 0) eta2_data$Estimate else NA_real_, 0.16, eta2_obs_vals), na.rm = TRUE)
-r2_plot_max <- max(c(if (nrow(r2_data) > 0) r2_data$Estimate else NA_real_, 0.28, r2_obs_vals), na.rm = TRUE)
+eta2_plot_max <- max(
+  c(if (nrow(eta2_data) > 0) eta2_data$Estimate else NA_real_, 0.16, eta2_obs_vals),
+  na.rm = TRUE
+)
+
+r2_plot_max <- max(
+  c(if (nrow(r2_data) > 0) r2_data$Estimate else NA_real_, 0.28, r2_obs_vals),
+  na.rm = TRUE
+)
 
 unique_groups <- unique(long_replicates$Variable_Group)
 plot_list <- list()
 
-obs_df <- data.frame(
-  Parameter = names(obs_metrics),
-  Observed = as.numeric(obs_metrics),
-  stringsAsFactors = FALSE
-) %>%
-  dplyr::mutate(
-    Variable_Group = stringr::str_replace_all(Parameter, "\\d+(?=:|$)", ""),
-    Metric_Type = dplyr::case_when(
-      stringr::str_detect(Parameter, "^R2") ~ "R2",
-      stringr::str_detect(Parameter, "^eta2") ~ "eta2",
-      TRUE ~ "beta"
-    )
-  )
-
 # ==========================================
-# 4. PLOTTING ITERATION LOOP
+# 5. PLOTTING ITERATION LOOP
 # ==========================================
 
 for (group in unique_groups) {
@@ -376,20 +571,34 @@ for (group in unique_groups) {
 }
 
 # ==========================================
-# 5. P-VALUE REPORTING
+# 6. P-VALUE REPORTING
 # ==========================================
 
-calculate_perm_p_value <- function(perm_dist, obs_val, is_beta = TRUE) {
+calculate_perm_p_value <- function(perm_dist, obs_val, two_sided = TRUE) {
   perm_dist <- perm_dist[is.finite(perm_dist)]
+  
   if (length(perm_dist) == 0 || !is.finite(obs_val)) {
     return(NA_real_)
   }
   
-  if (is_beta) {
-    mean(abs(perm_dist) >= abs(obs_val))
+  if (two_sided) {
+    exceed_count <- sum(abs(perm_dist) >= abs(obs_val))
   } else {
-    mean(perm_dist >= obs_val)
+    exceed_count <- sum(perm_dist >= obs_val)
   }
+  
+  (exceed_count + 1) / (length(perm_dist) + 1)
+}
+
+get_perm_source <- function(parameter) {
+  scheme <- choose_scheme_for_parameter(parameter)
+  
+  switch(
+    scheme,
+    joint = joint_replicates_df,
+    input_only = input_replicates_df,
+    slot_only = slot_replicates_df
+  )
 }
 
 p_values <- numeric(length(obs_metrics))
@@ -397,10 +606,46 @@ names(p_values) <- names(obs_metrics)
 
 for (p_name in names(obs_metrics)) {
   is_beta <- !grepl("^(eta2_|R2_)", p_name)
-  p_values[p_name] <- calculate_perm_p_value(replicates_df[[p_name]], obs_metrics[p_name], is_beta)
+  perm_source <- get_perm_source(p_name)
+  
+  p_values[p_name] <- calculate_perm_p_value(
+    perm_dist = perm_source[[p_name]],
+    obs_val = obs_metrics[p_name],
+    two_sided = is_beta
+  )
 }
 
-print("--- Observed Statistics ---")
+global_p_marginal <- calculate_perm_p_value(
+  perm_dist = joint_replicates_df$R2_marginal,
+  obs_val = obs_metrics["R2_marginal"],
+  two_sided = FALSE
+)
+
+global_p_conditional <- calculate_perm_p_value(
+  perm_dist = joint_replicates_df$R2_conditional,
+  obs_val = obs_metrics["R2_conditional"],
+  two_sided = FALSE
+)
+
+scheme_report <- data.frame(
+  Parameter = names(obs_metrics),
+  Permutation_Scheme = vapply(names(obs_metrics), choose_scheme_for_parameter, character(1)),
+  stringsAsFactors = FALSE
+)
+
+print("--- Observed Statistics")
 print(obs_metrics)
-print("--- Permutation P-values ---")
+
+print("--- Permutation Scheme Map")
+print(scheme_report)
+
+print("--- Permutation P-values")
 print(p_values)
+
+print("--- Overall R2 P-values (joint permutation)")
+print(
+  c(
+    R2_marginal = global_p_marginal,
+    R2_conditional = global_p_conditional
+  )
+)
